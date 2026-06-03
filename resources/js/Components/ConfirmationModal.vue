@@ -59,7 +59,7 @@ const config = computed(() => {
                 messageClass: 'text-body-md font-body-md text-text-muted',
                 buttonsContainer: 'bg-surface-container-low px-6 py-4 flex gap-3 justify-center',
                 btnCancel: 'flex-1 font-button text-button text-on-surface-variant hover:bg-surface-variant border border-border-standard rounded-lg py-2.5 transition-all',
-                btnConfirm: 'flex-1 font-button text-button bg-primary-container text-white hover:bg-teal-dark rounded-lg py-2.5 shadow-[0_4px_12px_rgba(68,161,148,0.2)] transition-all'
+                btnConfirm: 'flex-1 font-button text-button bg-teal text-white hover:bg-teal-dark rounded-lg py-2.5 shadow-[0_4px_12px_rgba(68,161,148,0.2)] transition-all'
             };
     }
 });
