@@ -43,6 +43,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/rekap/import', [ImportController::class, 'store'])->name('rekap.import.store');
     // Batch Import (Opsi A: multi-file, Opsi C: multi-sheet)
     Route::post('/rekap/import/batch-preview', [ImportController::class, 'batchPreview'])->name('rekap.import.batch-preview');
+    Route::post('/rekap/import/batch-switch-sheet', [ImportController::class, 'batchSwitchSheet'])->name('rekap.import.batch-switch-sheet');
     Route::post('/rekap/import/batch-store', [ImportController::class, 'batchStore'])->name('rekap.import.batch-store');
     Route::post('/rekap/import/multisheet-preview', [ImportController::class, 'multisheetPreview'])->name('rekap.import.multisheet-preview');
     Route::post('/rekap/import/multisheet-store', [ImportController::class, 'multisheetStore'])->name('rekap.import.multisheet-store');

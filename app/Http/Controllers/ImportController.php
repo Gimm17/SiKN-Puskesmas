@@ -232,34 +232,75 @@ class ImportController extends Controller
 
         foreach ($request->file('files') as $file) {
             $detectedBulan = $this->detectMonthFromFilename($file->getClientOriginalName());
-            $bulanForParse = $detectedBulan ?? 1; // Use 1 as placeholder if undetected
+            $bulanForParse = $detectedBulan ?? 1;
 
             $path      = $file->store('imports', 'local');
             $filePath  = Storage::disk('local')->path($path);
             $loaded    = $service->loadFile($filePath);
-            $parsed    = $service->parseFromSpreadsheet($loaded['spreadsheet'], $bulanForParse, $tahun, $loaded['sheetNames'][0] ?? null);
+            $sheetNames = $loaded['sheetNames'];
+
+            // Auto-select: prefer sheet whose name contains a month name or "KN"
+            $autoSheet = $sheetNames[0]; // default
+            foreach ($sheetNames as $sn) {
+                $cleanSn = strtoupper(preg_replace('/\s+/', '', $sn));
+                if (str_contains($cleanSn, 'KN') || $this->detectMonthFromFilename($sn) !== null) {
+                    $autoSheet = $sn;
+                    break;
+                }
+            }
+
+            $parsed = $service->parseFromSpreadsheet($loaded['spreadsheet'], $bulanForParse, $tahun, $autoSheet);
 
             $results[] = [
-                'tmpPath'       => $path,
-                'filename'      => $file->getClientOriginalName(),
-                'size'          => round($file->getSize() / 1024, 1) . ' KB',
-                'detectedBulan' => $detectedBulan,   // null if not detected
-                'sheetNames'    => $loaded['sheetNames'],
-                'rows'          => $parsed['rows'],
-                'rowCount'      => count($parsed['rows']),
-                'hasWarning'    => collect($parsed['rows'])->some('warning'),
-                'knCols'        => $parsed['knCols'],
+                'tmpPath'        => $path,
+                'filename'       => $file->getClientOriginalName(),
+                'size'           => round($file->getSize() / 1024, 1) . ' KB',
+                'detectedBulan'  => $detectedBulan,
+                'sheetNames'     => $sheetNames,
+                'activeSheet'    => $autoSheet,
+                'rows'           => $parsed['rows'],
+                'rowCount'       => count($parsed['rows']),
+                'hasWarning'     => collect($parsed['rows'])->some('warning'),
+                'knCols'         => $parsed['knCols'],
+                'hasMultipleSheets' => count($sheetNames) > 1,
             ];
 
-            // Free spreadsheet memory immediately
             $loaded['spreadsheet']->disconnectWorksheets();
             unset($loaded);
         }
 
-        // Store all tmp paths in session
         session(['batch_import_files' => array_column($results, 'tmpPath')]);
 
         return response()->json($results);
+    }
+
+    /** Re-parse a single batch file with a different sheet selection */
+    public function batchSwitchSheet(Request $request)
+    {
+        $request->validate([
+            'tmpPath' => 'required|string',
+            'sheet'   => 'required|string',
+            'bulan'   => 'required|integer|between:1,12',
+            'tahun'   => 'required|integer|between:2020,2099',
+        ]);
+
+        $tmpPath = $request->tmpPath;
+        if (!Storage::disk('local')->exists($tmpPath)) {
+            return response()->json(['error' => 'File tidak ditemukan di server. Silakan upload ulang.'], 422);
+        }
+
+        $filePath = Storage::disk('local')->path($tmpPath);
+        $service  = new ExcelImportService();
+        $loaded   = $service->loadFile($filePath);
+        $parsed   = $service->parseFromSpreadsheet($loaded['spreadsheet'], (int)$request->bulan, (int)$request->tahun, $request->sheet);
+
+        return response()->json([
+            'activeSheet' => $request->sheet,
+            'rows'        => $parsed['rows'],
+            'rowCount'    => count($parsed['rows']),
+            'hasWarning'  => collect($parsed['rows'])->some('warning'),
+            'knCols'      => $parsed['knCols'],
+        ]);
     }
 
     /** Store all batch files */

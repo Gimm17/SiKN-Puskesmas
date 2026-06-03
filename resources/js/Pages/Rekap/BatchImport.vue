@@ -79,11 +79,38 @@ async function doBatchPreview() {
         batchItems.value = res.data.map(item => ({
             ...item,
             bulan: item.detectedBulan ?? 1,
+            switchingSheet: false,
         }));
     } catch (err) {
         batchError.value = err.response?.data?.message ?? 'Gagal membaca file. Pastikan format file valid.';
     } finally {
         batchLoading.value = false;
+    }
+}
+
+// ===== BATCH SWITCH SHEET =====
+async function batchSwitchSheet(idx, newSheet) {
+    const item = batchItems.value[idx];
+    if (!item || item.activeSheet === newSheet) return;
+
+    item.switchingSheet = true;
+    try {
+        const res = await axios.post(route('rekap.import.batch-switch-sheet'), {
+            tmpPath: item.tmpPath,
+            sheet:   newSheet,
+            bulan:   item.bulan,
+            tahun:   tahun.value,
+            _token:  document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+        });
+        item.activeSheet = res.data.activeSheet;
+        item.rows        = res.data.rows;
+        item.rowCount    = res.data.rowCount;
+        item.hasWarning  = res.data.hasWarning;
+        item.knCols      = res.data.knCols;
+    } catch (err) {
+        batchError.value = 'Gagal mengganti sheet untuk file: ' + item.filename;
+    } finally {
+        item.switchingSheet = false;
     }
 }
 
@@ -280,7 +307,8 @@ function statusChip(status) {
                             <!-- Status icon -->
                             <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
                                 :class="item.rowCount > 0 ? 'bg-green-100' : 'bg-red-100'">
-                                <CheckCircle v-if="item.rowCount > 0" class="w-5 h-5 text-green-600" />
+                                <Loader2 v-if="item.switchingSheet" class="w-5 h-5 text-teal-600 animate-spin" />
+                                <CheckCircle v-else-if="item.rowCount > 0" class="w-5 h-5 text-green-600" />
                                 <AlertCircle v-else class="w-5 h-5 text-red-500" />
                             </div>
 
@@ -295,6 +323,9 @@ function statusChip(status) {
                                     </span>
                                     <span v-if="item.hasWarning" class="text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
                                         ⚠️ Ada KN &gt; LH
+                                    </span>
+                                    <span v-if="item.hasMultipleSheets" class="text-xs font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                        {{ item.sheetNames.length }} sheet
                                     </span>
                                 </div>
                             </div>
@@ -316,6 +347,35 @@ function statusChip(status) {
                                 <ChevronDown v-if="!batchExpanded[idx]" class="w-4 h-4" />
                                 <ChevronUp v-else class="w-4 h-4" />
                             </button>
+                        </div>
+
+                        <!-- Sheet Selector (only if multiple sheets) -->
+                        <div v-if="item.hasMultipleSheets" class="mt-3 ml-12">
+                            <p class="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+                                <Layers class="w-3.5 h-3.5 text-teal-600" />
+                                Pilih Sheet yang Akan Diimport:
+                            </p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="sn in item.sheetNames"
+                                    :key="sn"
+                                    @click="batchSwitchSheet(idx, sn)"
+                                    :disabled="item.switchingSheet"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-50"
+                                    :class="item.activeSheet === sn
+                                        ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                                        : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400 hover:bg-teal-50'"
+                                >
+                                    <span v-if="item.switchingSheet && item.activeSheet !== sn" class="opacity-50">{{ sn }}</span>
+                                    <span v-else>{{ sn }}</span>
+                                </button>
+                            </div>
+                            <p v-if="item.switchingSheet" class="text-xs text-teal-600 mt-1.5 flex items-center gap-1">
+                                <Loader2 class="w-3 h-3 animate-spin" /> Memuat data sheet...
+                            </p>
+                            <p v-else class="text-xs text-gray-400 mt-1.5">
+                                Sheet aktif: <strong class="text-teal-700">{{ item.activeSheet }}</strong>
+                            </p>
                         </div>
 
                         <!-- Expanded row detail -->
@@ -350,8 +410,12 @@ function statusChip(status) {
                                 </tbody>
                             </table>
                         </div>
+                        <div v-if="batchExpanded[idx] && item.rows.length === 0 && !item.switchingSheet" class="mt-3 ml-12 p-4 bg-red-50 rounded-xl border border-red-200 text-xs text-red-600 font-medium">
+                            ⚠️ Tidak ada data desa yang terdeteksi dari sheet ini. Coba pilih sheet yang berbeda.
+                        </div>
                     </div>
                 </div>
+
 
                 <!-- Save Button -->
                 <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
