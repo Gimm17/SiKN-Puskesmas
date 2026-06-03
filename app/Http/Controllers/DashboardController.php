@@ -19,10 +19,17 @@ class DashboardController extends Controller
 
     public function index(Request $request)
     {
-        $rawBulan = $request->get('bulan', now()->month);
+        if ($request->has('bulan')) {
+            session(['dashboard_bulan' => $request->get('bulan')]);
+        }
+        if ($request->has('tahun')) {
+            session(['dashboard_tahun' => $request->get('tahun')]);
+        }
+
+        $rawBulan = session('dashboard_bulan', now()->month);
         $isTahunan = $rawBulan === 'semua';
         $bulan = $isTahunan ? 'semua' : (int) $rawBulan;
-        $tahun = (int) $request->get('tahun', now()->year);
+        $tahun = (int) session('dashboard_tahun', now()->year);
 
         // --- Stat Cards ---
         $query = RekapData::where('tahun', $tahun);
