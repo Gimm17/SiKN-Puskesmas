@@ -45,6 +45,14 @@ class ImportController extends Controller
         ]);
     }
 
+    /** Show the batch/multi-file import page */
+    public function batchShow(Request $request)
+    {
+        return Inertia::render('Rekap/BatchImport', [
+            'namaBulan' => $this->namaBulan,
+        ]);
+    }
+
     /** Preview extracted data BEFORE saving (Step 2) */
     public function preview(ImportRekapRequest $request)
     {
@@ -183,5 +191,275 @@ class ImportController extends Controller
 
         return redirect()->route('rekap.index', ['bulan' => $bulan, 'tahun' => $tahun])
             ->with('success', "✅ Import selesai: $berhasil baris berhasil" . ($gagal > 0 ? ", $gagal gagal." : '.'));
+    }
+    /**
+     * ==========================================
+     * BATCH IMPORT — OPSI A (Multi-File Upload)
+     * ==========================================
+     */
+
+    /** Detect month number from filename (e.g. "Januari 2023.xlsx" → 1) */
+    private function detectMonthFromFilename(string $filename): ?int
+    {
+        $lower = strtolower($filename);
+        foreach ($this->namaBulan as $num => $name) {
+            if (str_contains($lower, strtolower($name))) {
+                return $num;
+            }
+        }
+        // Try detecting from number patterns like "01_" "02 " etc.
+        if (preg_match('/\b(0?[1-9]|1[0-2])\b/', $filename, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
+    /** Preview all uploaded files and detect month for each */
+    public function batchPreview(Request $request)
+    {
+        $request->validate([
+            'files'  => 'required|array|min:1|max:12',
+            'files.*'=> 'required|file|mimes:xlsx,xls|max:5120',
+            'tahun'  => 'required|integer|between:2020,2099',
+        ]);
+
+        set_time_limit(300);
+        ini_set('memory_limit', '512M');
+
+        $tahun   = (int) $request->tahun;
+        $service = new ExcelImportService();
+        $results = [];
+
+        foreach ($request->file('files') as $file) {
+            $detectedBulan = $this->detectMonthFromFilename($file->getClientOriginalName());
+            $bulanForParse = $detectedBulan ?? 1; // Use 1 as placeholder if undetected
+
+            $path      = $file->store('imports', 'local');
+            $filePath  = Storage::disk('local')->path($path);
+            $loaded    = $service->loadFile($filePath);
+            $parsed    = $service->parseFromSpreadsheet($loaded['spreadsheet'], $bulanForParse, $tahun, $loaded['sheetNames'][0] ?? null);
+
+            $results[] = [
+                'tmpPath'       => $path,
+                'filename'      => $file->getClientOriginalName(),
+                'size'          => round($file->getSize() / 1024, 1) . ' KB',
+                'detectedBulan' => $detectedBulan,   // null if not detected
+                'sheetNames'    => $loaded['sheetNames'],
+                'rows'          => $parsed['rows'],
+                'rowCount'      => count($parsed['rows']),
+                'hasWarning'    => collect($parsed['rows'])->some('warning'),
+                'knCols'        => $parsed['knCols'],
+            ];
+
+            // Free spreadsheet memory immediately
+            $loaded['spreadsheet']->disconnectWorksheets();
+            unset($loaded);
+        }
+
+        // Store all tmp paths in session
+        session(['batch_import_files' => array_column($results, 'tmpPath')]);
+
+        return response()->json($results);
+    }
+
+    /** Store all batch files */
+    public function batchStore(Request $request)
+    {
+        $request->validate([
+            'items'        => 'required|array|min:1',
+            'items.*.tmpPath'  => 'required|string',
+            'items.*.bulan'    => 'required|integer|between:1,12',
+            'items.*.rows'     => 'required|array',
+            'items.*.filename' => 'required|string',
+            'tahun'        => 'required|integer|between:2020,2099',
+        ]);
+
+        $tahun   = (int) $request->tahun;
+        $userId  = auth()->id();
+        $summary = [];
+
+        foreach ($request->items as $item) {
+            $bulan    = (int) $item['bulan'];
+            $rows     = $item['rows'];
+            $filename = $item['filename'];
+            $berhasil = 0;
+            $gagal    = 0;
+            $catatan  = [];
+
+            DB::transaction(function () use ($rows, $bulan, $tahun, $userId, &$berhasil, &$gagal, &$catatan) {
+                foreach ($rows as $row) {
+                    try {
+                        RekapData::updateOrCreate(
+                            ['desa_id' => $row['desa_id'], 'bulan' => $bulan, 'tahun' => $tahun],
+                            [
+                                'lahir_hidup_l' => max(0, (int)$row['lahir_hidup_l']),
+                                'lahir_hidup_p' => max(0, (int)$row['lahir_hidup_p']),
+                                'kn_lengkap_l'  => max(0, (int)$row['kn_lengkap_l']),
+                                'kn_lengkap_p'  => max(0, (int)$row['kn_lengkap_p']),
+                                'created_by'    => $userId,
+                                'updated_by'    => $userId,
+                            ]
+                        );
+                        $berhasil++;
+                    } catch (\Exception $e) {
+                        $gagal++;
+                        $catatan[] = 'Desa ID ' . ($row['desa_id'] ?? '?') . ': ' . $e->getMessage();
+                    }
+                }
+            });
+
+            // Log
+            $status = $gagal === 0 ? 'success' : ($berhasil === 0 ? 'failed' : 'partial');
+            ImportLog::create([
+                'user_id'    => $userId,
+                'filename'   => $filename,
+                'bulan'      => $bulan,
+                'tahun'      => $tahun,
+                'total_rows' => $berhasil,
+                'status'     => $status,
+                'catatan'    => count($catatan) ? implode('; ', $catatan) : null,
+            ]);
+
+            $summary[] = [
+                'filename' => $filename,
+                'bulan'    => $this->namaBulan[$bulan],
+                'berhasil' => $berhasil,
+                'gagal'    => $gagal,
+                'status'   => $status,
+            ];
+
+            // Cleanup tmp file
+            if (isset($item['tmpPath'])) {
+                Storage::disk('local')->delete($item['tmpPath']);
+            }
+        }
+
+        $totalBerhasil = array_sum(array_column($summary, 'berhasil'));
+        $totalGagal    = array_sum(array_column($summary, 'gagal'));
+
+        return redirect()->route('rekap.index', ['tahun' => $tahun])
+            ->with('success', "✅ Import batch selesai: {$totalBerhasil} baris dari " . count($summary) . " file berhasil diimport." . ($totalGagal > 0 ? " ({$totalGagal} gagal)" : ''));
+    }
+
+    /**
+     * ==========================================
+     * MULTI-SHEET IMPORT — OPSI C (1 File, 12 Sheet)
+     * ==========================================
+     */
+
+    /** Preview a single file with multiple sheets, one per month */
+    public function multisheetPreview(Request $request)
+    {
+        $request->validate([
+            'file'  => 'required|file|mimes:xlsx,xls|max:10240',
+            'tahun' => 'required|integer|between:2020,2099',
+        ]);
+
+        set_time_limit(300);
+        ini_set('memory_limit', '512M');
+
+        $file     = $request->file('file');
+        $tahun    = (int) $request->tahun;
+        $path     = $file->store('imports', 'local');
+        $filePath = Storage::disk('local')->path($path);
+        $service  = new ExcelImportService();
+        $loaded   = $service->loadFile($filePath);
+        $spreadsheet = $loaded['spreadsheet'];
+
+        $sheetResults = [];
+        foreach ($loaded['sheetNames'] as $sheetName) {
+            $detectedBulan = $this->detectMonthFromFilename($sheetName);
+            $bulanForParse = $detectedBulan ?? 1;
+
+            $parsed = $service->parseFromSpreadsheet($spreadsheet, $bulanForParse, $tahun, $sheetName);
+            $sheetResults[] = [
+                'sheetName'     => $sheetName,
+                'detectedBulan' => $detectedBulan,
+                'rows'          => $parsed['rows'],
+                'rowCount'      => count($parsed['rows']),
+                'hasWarning'    => collect($parsed['rows'])->some('warning'),
+                'knCols'        => $parsed['knCols'],
+            ];
+        }
+
+        session(['multisheet_tmp_path' => $path, 'multisheet_filename' => $file->getClientOriginalName()]);
+
+        return response()->json([
+            'filename'     => $file->getClientOriginalName(),
+            'size'         => round($file->getSize() / 1024, 1) . ' KB',
+            'sheetResults' => $sheetResults,
+        ]);
+    }
+
+    /** Store all sheets from a multi-sheet file */
+    public function multisheetStore(Request $request)
+    {
+        $request->validate([
+            'sheets'         => 'required|array|min:1',
+            'sheets.*.sheetName'  => 'required|string',
+            'sheets.*.bulan'      => 'required|integer|between:1,12',
+            'sheets.*.rows'       => 'required|array',
+            'tahun'          => 'required|integer|between:2020,2099',
+        ]);
+
+        $tahun    = (int) $request->tahun;
+        $userId   = auth()->id();
+        $filename = session('multisheet_filename', 'multi-sheet.xlsx');
+        $summary  = [];
+
+        foreach ($request->sheets as $sheet) {
+            $bulan    = (int) $sheet['bulan'];
+            $rows     = $sheet['rows'];
+            $berhasil = 0;
+            $gagal    = 0;
+            $catatan  = [];
+
+            DB::transaction(function () use ($rows, $bulan, $tahun, $userId, &$berhasil, &$gagal, &$catatan) {
+                foreach ($rows as $row) {
+                    try {
+                        RekapData::updateOrCreate(
+                            ['desa_id' => $row['desa_id'], 'bulan' => $bulan, 'tahun' => $tahun],
+                            [
+                                'lahir_hidup_l' => max(0, (int)$row['lahir_hidup_l']),
+                                'lahir_hidup_p' => max(0, (int)$row['lahir_hidup_p']),
+                                'kn_lengkap_l'  => max(0, (int)$row['kn_lengkap_l']),
+                                'kn_lengkap_p'  => max(0, (int)$row['kn_lengkap_p']),
+                                'created_by'    => $userId,
+                                'updated_by'    => $userId,
+                            ]
+                        );
+                        $berhasil++;
+                    } catch (\Exception $e) {
+                        $gagal++;
+                        $catatan[] = 'Desa ID ' . ($row['desa_id'] ?? '?') . ': ' . $e->getMessage();
+                    }
+                }
+            });
+
+            $status = $gagal === 0 ? 'success' : ($berhasil === 0 ? 'failed' : 'partial');
+            ImportLog::create([
+                'user_id'    => $userId,
+                'filename'   => $filename . ' [' . ($this->namaBulan[$bulan] ?? $bulan) . ']',
+                'bulan'      => $bulan,
+                'tahun'      => $tahun,
+                'total_rows' => $berhasil,
+                'status'     => $status,
+                'catatan'    => count($catatan) ? implode('; ', $catatan) : null,
+            ]);
+
+            $summary[] = ['bulan' => $this->namaBulan[$bulan], 'berhasil' => $berhasil, 'gagal' => $gagal, 'status' => $status];
+        }
+
+        // Cleanup
+        if ($tmpPath = session('multisheet_tmp_path')) {
+            Storage::disk('local')->delete($tmpPath);
+            session()->forget(['multisheet_tmp_path', 'multisheet_filename']);
+        }
+
+        $totalBerhasil = array_sum(array_column($summary, 'berhasil'));
+        $totalGagal    = array_sum(array_column($summary, 'gagal'));
+
+        return redirect()->route('rekap.index', ['tahun' => $tahun])
+            ->with('success', "✅ Import multi-sheet selesai: {$totalBerhasil} baris dari " . count($summary) . " sheet berhasil diimport." . ($totalGagal > 0 ? " ({$totalGagal} gagal)" : ''));
     }
 }

@@ -1,6 +1,6 @@
 <script setup>
 import { Link, usePage, router } from '@inertiajs/vue3';
-import { Activity, LayoutDashboard, Database, Download, Upload, User, Users, LogOut, FileInput, FileOutput, CalendarDays, HardDriveDownload } from 'lucide-vue-next';
+import { Activity, LayoutDashboard, Database, Download, Upload, User, Users, LogOut, FileInput, FileOutput, CalendarDays, HardDriveDownload, PackageOpen } from 'lucide-vue-next';
 import { ref } from 'vue';
 import ConfirmationModal from '../ConfirmationModal.vue';
 
@@ -12,14 +12,19 @@ function performLogout() {
 }
 
 const navItems = [
-    { label: 'Dashboard',    icon: LayoutDashboard, route: 'dashboard',    match: '/dashboard' },
-    { label: 'Data Rekap',  icon: Database,         route: 'rekap.index',  match: '/rekap' },
-    { label: 'Preview Tahunan', icon: CalendarDays, route: 'rekap.yearly', match: '/rekap/yearly' },
-    { label: 'Import Excel', icon: FileInput,        route: 'rekap.import', match: '/rekap/import' },
+    { label: 'Dashboard',    icon: LayoutDashboard, route: 'dashboard',          match: '/dashboard' },
+    { label: 'Data Rekap',  icon: Database,         route: 'rekap.index',        match: '/rekap' },
+    { label: 'Preview Tahunan', icon: CalendarDays, route: 'rekap.yearly',       match: '/rekap/yearly' },
+    { label: 'Import Excel', icon: FileInput,        route: 'rekap.import',       match: '/rekap/import-single' },
+    { label: 'Import Batch', icon: PackageOpen,      route: 'rekap.import.batch', match: '/rekap/import/batch' },
 ];
 
 function isActive(match) {
-    // '/rekap' should NOT match '/rekap/import'
+    // Special case: exact match for batch import
+    if (match === '/rekap/import/batch') return page.url.startsWith('/rekap/import/batch');
+    // Import Excel (single): matches /rekap/import but NOT /rekap/import/batch
+    if (match === '/rekap/import-single') return page.url === '/rekap/import' || (page.url.startsWith('/rekap/import') && !page.url.startsWith('/rekap/import/batch'));
+    // '/rekap' should NOT match '/rekap/import' or '/rekap/yearly'
     if (match === '/rekap') return page.url === '/rekap' || (page.url.startsWith('/rekap') && !page.url.startsWith('/rekap/'));
     return page.url.startsWith(match);
 }

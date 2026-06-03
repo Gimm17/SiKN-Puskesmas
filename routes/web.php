@@ -37,9 +37,15 @@ Route::middleware(['auth'])->group(function () {
     
     // Import Excel
     Route::get('/rekap/import', [ImportController::class, 'show'])->name('rekap.import');
+    Route::get('/rekap/import/batch', [ImportController::class, 'batchShow'])->name('rekap.import.batch');
     Route::post('/rekap/import/preview', [ImportController::class, 'preview'])->name('rekap.import.preview');
     Route::post('/rekap/import/switch-sheet', [ImportController::class, 'switchSheet'])->name('rekap.import.switch-sheet');
     Route::post('/rekap/import', [ImportController::class, 'store'])->name('rekap.import.store');
+    // Batch Import (Opsi A: multi-file, Opsi C: multi-sheet)
+    Route::post('/rekap/import/batch-preview', [ImportController::class, 'batchPreview'])->name('rekap.import.batch-preview');
+    Route::post('/rekap/import/batch-store', [ImportController::class, 'batchStore'])->name('rekap.import.batch-store');
+    Route::post('/rekap/import/multisheet-preview', [ImportController::class, 'multisheetPreview'])->name('rekap.import.multisheet-preview');
+    Route::post('/rekap/import/multisheet-store', [ImportController::class, 'multisheetStore'])->name('rekap.import.multisheet-store');
 
     // Export
     Route::get('/export/xlsx', [ExportController::class, 'xlsx'])->name('export.xlsx');
