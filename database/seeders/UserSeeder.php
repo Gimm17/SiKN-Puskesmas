@@ -12,30 +12,29 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
+        // Hapus akun lama (jika ada)
+        \App\Models\User::whereIn('email', [
+            'admin@sikn.local',
+            'petugas@puskesmas.go.id',
+            'marwa@puskesmas.go.id'
+        ])->delete();
+
+        // Akun Admin Baru
         \App\Models\User::updateOrCreate(
-            ['email' => 'admin@sikn.local'],
+            ['email' => 'admin@sikn.online'],
             [
                 'name'     => 'Admin SiKN',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'password' => \Illuminate\Support\Facades\Hash::make('SiKNAdmin1717'),
                 'role'     => 'admin',
             ]
         );
 
+        // Akun Petugas Baru
         \App\Models\User::updateOrCreate(
-            ['email' => 'petugas@puskesmas.go.id'],
+            ['email' => 'tujiemsudiarjo@gmail.com'],
             [
-                'name'     => 'Petugas',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                'role'     => 'petugas',
-            ]
-        );
-
-        // Design-spec sample users
-        \App\Models\User::updateOrCreate(
-            ['email' => 'marwa@puskesmas.go.id'],
-            [
-                'name'     => 'Marwa T. Materru',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'name'     => 'Tujiem Sudiarjo',
+                'password' => \Illuminate\Support\Facades\Hash::make('tujiem123'),
                 'role'     => 'petugas',
             ]
         );
