@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\ImportController;
@@ -52,6 +53,11 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
     Route::post('/users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
+
+    // Backup & Restore (Admin only)
+    Route::get('/backup', [BackupController::class, 'index'])->name('backup.index');
+    Route::get('/backup/export', [BackupController::class, 'export'])->name('backup.export');
+    Route::post('/backup/import', [BackupController::class, 'import'])->name('backup.import');
 
     // Print / Preview Cetak
     Route::get('/print/preview', [PrintController::class, 'preview'])->name('print.preview');

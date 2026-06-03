@@ -1,6 +1,6 @@
 <script setup>
 import { Link, usePage, router } from '@inertiajs/vue3';
-import { Activity, LayoutDashboard, Database, Download, Upload, User, Users, LogOut, FileInput, FileOutput, CalendarDays } from 'lucide-vue-next';
+import { Activity, LayoutDashboard, Database, Download, Upload, User, Users, LogOut, FileInput, FileOutput, CalendarDays, HardDriveDownload } from 'lucide-vue-next';
 import { ref } from 'vue';
 import ConfirmationModal from '../ConfirmationModal.vue';
 
@@ -68,7 +68,6 @@ function isActive(match) {
                 <span class="text-[14px] font-medium">Profil Saya</span>
             </Link>
             
-            <!-- Admin Only -->
             <template v-if="$page.props.auth.user.role === 'admin'">
                 <Link :href="route('users.index')"
                     class="h-[44px] px-3 rounded-lg flex items-center gap-3 transition-all duration-150 group"
@@ -77,6 +76,14 @@ function isActive(match) {
                         : 'text-white/80 hover:bg-white/10 hover:text-white border-l-[3px] border-transparent'">
                     <Users class="w-[18px] h-[18px] flex-shrink-0 transition-transform group-hover:scale-110" />
                     <span class="text-[14px] font-medium">Kelola User</span>
+                </Link>
+                <Link :href="route('backup.index')"
+                    class="h-[44px] px-3 rounded-lg flex items-center gap-3 transition-all duration-150 group"
+                    :class="isActive('/backup')
+                        ? 'bg-teal-deeper text-white border-l-[3px] border-white shadow-sm'
+                        : 'text-white/80 hover:bg-white/10 hover:text-white border-l-[3px] border-transparent'">
+                    <HardDriveDownload class="w-[18px] h-[18px] flex-shrink-0 transition-transform group-hover:scale-110" />
+                    <span class="text-[14px] font-medium">Backup & Restore</span>
                 </Link>
             </template>
         </nav>
