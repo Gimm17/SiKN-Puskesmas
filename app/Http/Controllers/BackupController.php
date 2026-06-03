@@ -81,8 +81,8 @@ class BackupController extends Controller
         $imported = 0;
 
         DB::transaction(function () use ($rows, $userId, &$imported) {
-            // Hapus data lama sebelum restore
-            RekapData::truncate();
+            // Hapus data lama sebelum restore (DELETE lebih aman dari TRUNCATE di MySQL)
+            DB::table('rekap_data')->delete();
 
             foreach ($rows as $row) {
                 RekapData::create([
