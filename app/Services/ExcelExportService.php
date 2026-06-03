@@ -26,7 +26,7 @@ class ExcelExportService
      */
     public function generateKNLengkap(int $bulan, int $tahun): Spreadsheet
     {
-        $templatePath = storage_path('app/templates/TEMPLATE-EXPORT.xlsx');
+        $templatePath = resource_path('templates/TEMPLATE-EXPORT.xlsx');
         if (!file_exists($templatePath)) {
             throw new \Exception("File template tidak ditemukan di " . $templatePath);
         }
