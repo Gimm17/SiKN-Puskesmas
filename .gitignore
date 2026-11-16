@@ -25,3 +25,8 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /design-system
+
+.env.*
+!.env.example
+*.sqlite*
+database/database.sqlite
